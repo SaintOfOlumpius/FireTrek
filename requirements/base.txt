@@ -1,0 +1,47 @@
+Django==5.0.3
+djangorestframework==3.15.1
+djangorestframework-simplejwt==5.3.1
+django-cors-headers==4.3.1
+django-filter==24.2
+django-environ==0.11.2
+django-redis==5.4.0
+django-debug-toolbar==4.3.0
+
+drf-nested-routers==0.93.5
+
+# PostgreSQL + PostGIS
+psycopg2-binary==2.9.9
+django-extensions==3.2.3
+
+# Geospatial
+GDAL==3.4.3
+# django.contrib.gis requires GDAL installed on OS
+
+# Channels / WebSockets
+channels==4.1.0
+channels-redis==4.2.0
+daphne==4.1.2
+
+# Celery
+celery==5.3.6
+django-celery-beat==2.6.0
+django-celery-results==2.5.1
+redis==5.0.3
+
+# Security
+cryptography==42.0.5
+PyJWT==2.8.0
+
+# Utilities
+Pillow>=10.4.0
+python-dateutil==2.9.0
+pytz==2024.1
+requests==2.31.0
+shortuuid==1.0.13
+ulid-py==1.1.0
+
+# Monitoring
+sentry-sdk==1.45.0
+
+# Email
+django-anymail==10.3

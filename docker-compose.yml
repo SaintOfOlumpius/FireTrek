@@ -1,0 +1,102 @@
+version: "3.9"
+
+# ---------------------------------------------------------------------------
+# FireTrek local development stack
+# ---------------------------------------------------------------------------
+# Services:
+#   db        — PostgreSQL 16 + PostGIS
+#   redis     — Redis 7 (cache, channel layer, Celery broker)
+#   web       — Django ASGI server (Daphne)
+#   worker    — Celery default + telemetry queues
+#   worker_notifications — Celery notifications queue
+#   beat      — Celery Beat scheduler
+# ---------------------------------------------------------------------------
+
+x-app-env: &app-env
+  DJANGO_SETTINGS_MODULE: config.settings.development
+  DATABASE_URL: postgis://firetrek:firetrek@db:5432/firetrek
+  REDIS_URL: redis://redis:6379
+  SECRET_KEY: dev-secret-key-change-in-production
+
+x-app-base: &app-base
+  build:
+    context: .
+    target: runtime
+  environment:
+    <<: *app-env
+  depends_on:
+    db:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+  volumes:
+    - .:/app
+    - media_files:/app/media
+
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_DB: firetrek
+      POSTGRES_USER: firetrek
+      POSTGRES_PASSWORD: firetrek
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U firetrek"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  web:
+    <<: *app-base
+    command: >
+      sh -c "python manage.py migrate &&
+             python manage.py collectstatic --noinput &&
+             daphne -b 0.0.0.0 -p 8000 config.asgi:application"
+    ports:
+      - "8000:8000"
+
+  worker:
+    <<: *app-base
+    command: >
+      celery -A workers.celery worker
+      -Q default,telemetry
+      --concurrency=4
+      --loglevel=info
+    healthcheck:
+      test: ["CMD", "celery", "-A", "workers.celery", "inspect", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  worker_notifications:
+    <<: *app-base
+    command: >
+      celery -A workers.celery worker
+      -Q notifications,low_priority
+      --concurrency=2
+      --loglevel=info
+
+  beat:
+    <<: *app-base
+    command: >
+      celery -A workers.celery beat
+      --scheduler django_celery_beat.schedulers:DatabaseScheduler
+      --loglevel=info
+
+volumes:
+  postgres_data:
+  media_files:
