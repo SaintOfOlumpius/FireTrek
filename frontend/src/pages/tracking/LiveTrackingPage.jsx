@@ -7,7 +7,7 @@ import { useAuthStore } from '../../store/authStore.js'
 let L = null
 const EMPTY_ARR = []
 
-// ── Status config ─────────────────────────────────────────────────────────────
+//  Status config 
 const STATUS = {
   online:      { dot: 'bg-emerald-500',           badge: 'bg-emerald-600/15 text-emerald-400 border-emerald-600/25', label: 'Online',      mapColor: '#22c55e' },
   low_battery: { dot: 'bg-orange-500',             badge: 'bg-orange-600/15 text-orange-400 border-orange-600/25',   label: 'Low Battery', mapColor: '#f59e0b' },
@@ -36,7 +36,7 @@ export default function LiveTrackingPage() {
   const onlineCount = devices.filter((d) => d.status === 'online').length
   const liveCount = Object.keys(liveLocations).length
 
-  // ── Init Leaflet map ────────────────────────────────────────────────────────
+  //  Init Leaflet map 
   useEffect(() => {
     if (mapInstanceRef.current || !mapRef.current) return
 
@@ -85,7 +85,7 @@ export default function LiveTrackingPage() {
     }
   }, [])
 
-  // ── Update markers ──────────────────────────────────────────────────────────
+  //  Update markers 
   useEffect(() => {
     if (!mapInstanceRef.current || !L) return
 

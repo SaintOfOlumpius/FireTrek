@@ -5,9 +5,8 @@ name = "pypi"
 
 [packages]
 django = "*"
-celery = "*"
-environ = "*"
 djangorestframework = "*"
+environ = "*"
 
 [dev-packages]
 

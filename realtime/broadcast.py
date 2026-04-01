@@ -33,7 +33,7 @@ def broadcast_location_update(device, location):
         "timestamp": location.timestamp.isoformat(),
     }
 
-    message = {"type": "location_update", "payload": payload}
+    message = {"type": "location.update", "payload": payload}
 
     try:
         send = async_to_sync(channel_layer.group_send)

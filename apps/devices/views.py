@@ -25,10 +25,6 @@ class DeviceViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["post"], permission_classes=[IsAuthenticated, IsOrgAdmin])
     def provision(self, request):
-        """
-        Provision a new ESP32 device. Returns the one-time API key.
-        The key is never stored in plaintext; it must be saved by the caller.
-        """
         serializer = DeviceProvisionSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
@@ -51,13 +47,27 @@ class DeviceViewSet(viewsets.ModelViewSet):
             created_by=request.user,
         )
 
-        response_data = DeviceProvisionResponseSerializer(device).data
-        response_data["api_key"] = raw_key
-        return Response(response_data, status=status.HTTP_201_CREATED)
+        # Build response manually — don't pass device to serializer since api_key
+        # is not a model field, it only exists as raw_key at this moment
+        return Response({
+            "id": str(device.id),
+            "uid": device.uid,
+            "name": device.name,
+            "organization": str(device.organization_id),
+            "api_key": raw_key,
+            "created_at": device.created_at.isoformat(),
+        }, status=status.HTTP_201_CREATED)
 
-    @action(detail=True, methods=["get"])
+    @action(detail=True, methods=["get", "post"])
     def health(self, request, pk=None):
         device = self.get_object()
+
+        if request.method == "POST":
+            serializer = DeviceHealthSerializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            serializer.save(device=device)
+            return Response({"status": "ok"}, status=status.HTTP_201_CREATED)
+
         records = DeviceHealth.objects.filter(device=device).order_by("-timestamp")[:100]
         serializer = DeviceHealthSerializer(records, many=True)
         return Response(serializer.data)

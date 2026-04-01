@@ -11,7 +11,7 @@ import Spinner from '../../components/ui/Spinner.jsx'
 import { listFirearms, createFirearm, deleteFirearm, listCategories } from '../../api/firearms.js'
 import { useAuthStore } from '../../store/authStore.js'
 
-// ── Status config ─────────────────────────────────────────────────────────────
+//  Status config 
 const STATUS_STYLE = {
   active:          { dot: 'bg-emerald-500',          badge: 'bg-emerald-600/15 text-emerald-400 border-emerald-600/25' },
   inactive:        { dot: 'bg-zinc-500',              badge: 'bg-zinc-700/40 text-zinc-400 border-zinc-600/25' },
@@ -23,7 +23,7 @@ const getStatus = (s) => STATUS_STYLE[s] ?? STATUS_STYLE.inactive
 
 const STATUSES = ['active', 'inactive', 'lost', 'stolen', 'decommissioned']
 
-// ── Primitives ────────────────────────────────────────────────────────────────
+//  Primitives ─
 function SectionLabel({ children }) {
   return (
     <div className="flex items-center gap-3 mb-1">
@@ -82,7 +82,7 @@ function StyledSelect({ children, ...props }) {
   )
 }
 
-// ── License expiry colour ─────────────────────────────────────────────────────
+//  License expiry colour 
 function LicenseDate({ dateStr }) {
   if (!dateStr) return <span className="text-zinc-700 font-mono text-xs">—</span>
   const date = new Date(dateStr)
@@ -91,7 +91,7 @@ function LicenseDate({ dateStr }) {
   return <span className={`font-mono text-xs ${color}`}>{format(date, 'dd MMM yyyy')}</span>
 }
 
-// ── Main page ─────────────────────────────────────────────────────────────────
+//  Main page 
 export default function FirearmsPage() {
   const qc = useQueryClient()
   const { activeOrg } = useAuthStore()
@@ -154,7 +154,7 @@ export default function FirearmsPage() {
   return (
     <div className="flex flex-col min-h-full bg-black">
 
-      {/* ── Page header ───────────────────────────────────────────────────── */}
+      {/*  Page header  */}
       <div className="border-b border-zinc-900 px-6 py-5 relative overflow-hidden shrink-0">
         <div
           className="absolute inset-0 opacity-[0.02] pointer-events-none"
@@ -182,7 +182,7 @@ export default function FirearmsPage() {
         </div>
       </div>
 
-      {/* ── Stat strip ────────────────────────────────────────────────────── */}
+      {/*  Stat strip ─ */}
       <div className="px-6 pt-5">
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-zinc-800 border border-zinc-800 rounded-lg overflow-hidden">
           {[
@@ -201,7 +201,7 @@ export default function FirearmsPage() {
 
       <div className="flex-1 p-6 space-y-4">
 
-        {/* ── Filters ───────────────────────────────────────────────────── */}
+        {/*  Filters  */}
         <div className="flex gap-3 flex-wrap items-center">
           {/* Search */}
           <div className="relative flex-1 min-w-56">
@@ -236,7 +236,7 @@ export default function FirearmsPage() {
           </div>
         </div>
 
-        {/* ── Table ─────────────────────────────────────────────────────── */}
+        {/*  Table  */}
         <Panel>
           <PanelHeader
             title="Registry"
@@ -362,7 +362,7 @@ export default function FirearmsPage() {
         </Panel>
       </div>
 
-      {/* ── Create modal ──────────────────────────────────────────────────── */}
+      {/*  Create modal  */}
       <Modal open={showCreate} onClose={() => setShowCreate(false)} title="Register Firearm" size="md">
         <form onSubmit={handleSubmit(onCreateSubmit)} className="space-y-5">
           <div className="grid grid-cols-2 gap-4">
@@ -457,7 +457,7 @@ export default function FirearmsPage() {
         </form>
       </Modal>
 
-      {/* ── Confirm delete ─────────────────────────────────────────────────── */}
+      {/*  Confirm delete ─ */}
       <ConfirmDialog
         open={!!deleteTarget}
         onClose={() => setDeleteTarget(null)}

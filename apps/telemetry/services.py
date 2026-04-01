@@ -1,46 +1,20 @@
-"""
-Telemetry Ingestion Pipeline.
-
-This is the most performance-critical code path in the system. Each call
-processes one telemetry packet from an ESP32 device.
-
-Pipeline stages (in order):
-1. Build the PostGIS Point geometry from lat/lon.
-2. Persist the Location record.
-3. Update device denormalised state (last_seen, last_battery, status).
-4. Persist a DeviceHealth snapshot.
-5. Run geofence checks (PostGIS spatial query).
-6. Run alert engine (evaluate conditions, deduplicate, create alerts).
-7. Broadcast to WebSocket channel layer.
-
-Each stage is wrapped in a try/except so a failure in step 5 (geofence)
-never causes the telemetry to be lost (step 2 already committed).
-
-The geofence and alert stages are offloaded to Celery to keep the
-HTTP response under 200 ms even on complex geofence geometries.
-"""
-
 import logging
-from datetime import timedelta
 
-from django.contrib.gis.geos import Point
 from django.utils import timezone
 
 from apps.devices.models import Device, DeviceHealth
 from apps.telemetry.models import Location
 
+try:
+    from django.contrib.gis.geos import Point
+    GIS_AVAILABLE = True
+except Exception:
+    GIS_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 
 class TelemetryIngestionService:
-    """
-    Entry point for the telemetry pipeline. Called from the API view.
-
-    Design: The service receives the validated serializer data and the
-    authenticated device object. It is a plain Python class (not a Model
-    method or signal) so that it is easily unit-testable in isolation.
-    """
-
     def __init__(self, device: Device, data: dict):
         self.device = device
         self.data = data
@@ -53,7 +27,10 @@ class TelemetryIngestionService:
         return location
 
     def _save_location(self) -> Location:
-        point = Point(self.data["longitude"], self.data["latitude"], srid=4326)
+        point = None
+        if GIS_AVAILABLE:
+            point = Point(self.data["longitude"], self.data["latitude"], srid=4326)
+
         return Location.objects.create(
             device=self.device,
             point=point,
@@ -86,7 +63,6 @@ class TelemetryIngestionService:
             last_longitude=self.data["longitude"],
             status=new_status,
         )
-        # Keep local object in sync
         self.device.last_seen = now
         self.device.last_battery = battery
         self.device.status = new_status
@@ -103,23 +79,20 @@ class TelemetryIngestionService:
         )
 
     def _trigger_async_processing(self, location: Location):
-        """
-        Fire-and-forget Celery tasks for geofence checks and alert evaluation.
-        We pass only PKs to avoid serialising large model instances.
-        """
-        from workers.tasks.geofence_tasks import check_geofences_for_location
-        from workers.tasks.alert_tasks import evaluate_telemetry_alerts
+        try:
+            from workers.tasks.geofence_tasks import check_geofences_for_location
+            from workers.tasks.alert_tasks import evaluate_telemetry_alerts
 
-        check_geofences_for_location.delay(str(location.id), str(self.device.id))
-        evaluate_telemetry_alerts.delay(str(location.id), str(self.device.id))
+            check_geofences_for_location.delay(str(location.id), str(self.device.id))
+            evaluate_telemetry_alerts.delay(str(location.id), str(self.device.id))
+        except Exception:
+            logger.warning("Celery task dispatch failed — Redis may be unavailable")
 
-        # WebSocket broadcast runs synchronously but is non-blocking because
-        # the channel layer send is async-safe via the sync wrapper.
         self._broadcast_location(location)
 
     def _broadcast_location(self, location: Location):
-        from realtime.broadcast import broadcast_location_update
         try:
+            from realtime.broadcast import broadcast_location_update
             broadcast_location_update(self.device, location)
         except Exception:
-            logger.exception("WebSocket broadcast failed for device %s", self.device.uid)
+            logger.warning("WebSocket broadcast failed for device %s", self.device.uid)
