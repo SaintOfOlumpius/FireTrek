@@ -7,7 +7,7 @@ class FirearmCategorySerializer(serializers.ModelSerializer):
     class Meta:
         model = FirearmCategory
         fields = ["id", "organization", "name", "description", "created_at"]
-        read_only_fields = ["id", "created_at"]
+        read_only_fields = ["id", "organization", "created_at"]
 
 
 class FirearmSerializer(serializers.ModelSerializer):
@@ -23,7 +23,7 @@ class FirearmSerializer(serializers.ModelSerializer):
             "assigned_to", "assigned_to_email", "active_device_uid",
             "notes", "image", "license_number", "license_expiry", "created_at",
         ]
-        read_only_fields = ["id", "created_at"]
+        read_only_fields = ["id", "organization", "created_at"]
 
     def get_active_device_uid(self, obj):
         device = obj.devices.filter(is_active=True).first()
@@ -31,13 +31,18 @@ class FirearmSerializer(serializers.ModelSerializer):
 
 
 class FirearmListSerializer(serializers.ModelSerializer):
-    """Lightweight serialiser for list endpoints."""
-
+    """List serializer — includes all fields needed to render the table."""
+    category_name = serializers.CharField(source="category.name", read_only=True)
+    assigned_to_email = serializers.EmailField(source="assigned_to.email", read_only=True)
     active_device_uid = serializers.SerializerMethodField()
 
     class Meta:
         model = Firearm
-        fields = ["id", "serial_number", "make", "model", "status", "active_device_uid"]
+        fields = [
+            "id", "serial_number", "make", "model", "calibre",
+            "status", "category_name", "assigned_to_email",
+            "active_device_uid", "license_expiry",
+        ]
 
     def get_active_device_uid(self, obj):
         device = obj.devices.filter(is_active=True).first()

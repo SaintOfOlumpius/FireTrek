@@ -7,6 +7,18 @@ from .models import Firearm, FirearmCategory
 from .serializers import FirearmSerializer, FirearmListSerializer, FirearmCategorySerializer
 
 
+def _get_org(request):
+    """Get the user's active organisation, checking request context first."""
+    org = getattr(request, "organization", None)
+    if org is not None:
+        return org
+    from apps.organizations.models import Organization
+    return Organization.objects.filter(
+        memberships__user=request.user,
+        memberships__is_active=True,
+    ).first()
+
+
 class FirearmCategoryViewSet(viewsets.ModelViewSet):
     serializer_class = FirearmCategorySerializer
     permission_classes = [IsAuthenticated, IsOrgAdmin]
@@ -17,13 +29,16 @@ class FirearmCategoryViewSet(viewsets.ModelViewSet):
             organization__memberships__is_active=True,
         )
 
+    def perform_create(self, serializer):
+        serializer.save(organization=_get_org(self.request))
+
 
 class FirearmViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated, IsOrgMember]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ["status", "organization", "category"]
-    search_fields = ["serial_number", "make", "model"]
-    ordering_fields = ["created_at", "serial_number"]
+    search_fields = ["serial_number", "make", "model", "calibre"]
+    ordering_fields = ["created_at", "serial_number", "make", "model"]
 
     def get_serializer_class(self):
         if self.action == "list":
@@ -40,3 +55,6 @@ class FirearmViewSet(viewsets.ModelViewSet):
             .prefetch_related("devices")
             .distinct()
         )
+
+    def perform_create(self, serializer):
+        serializer.save(organization=_get_org(self.request))

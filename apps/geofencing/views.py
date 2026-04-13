@@ -1,4 +1,4 @@
-from rest_framework import viewsets, status
+from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -27,7 +27,6 @@ class GeofenceViewSet(viewsets.ModelViewSet):
             organization__memberships__is_active=True,
         ).prefetch_related("assignments").distinct()
 
-        # Optional filters
         is_active = self.request.query_params.get("is_active")
         if is_active is not None:
             qs = qs.filter(is_active=is_active.lower() == "true")
@@ -40,15 +39,23 @@ class GeofenceViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         from apps.organizations.models import Organization
-        org = Organization.objects.filter(
-            memberships__user=self.request.user,
-            memberships__is_active=True,
-        ).first()
-        serializer.save(organization=org)
+
+        # Use org from request context if middleware sets it, else find first active org
+        org = getattr(self.request, "organization", None)
+        if org is None:
+            org = Organization.objects.filter(
+                memberships__user=self.request.user,
+                memberships__is_active=True,
+            ).first()
+
+        # organization is read_only on the serializer so we pass it via save()
+        serializer.save(
+            organization=org,
+            created_by=self.request.user,
+        )
 
     @action(detail=True, methods=["patch"], url_path="toggle")
     def toggle_active(self, request, pk=None):
-        """Toggle is_active on a geofence."""
         fence = self.get_object()
         fence.is_active = not fence.is_active
         fence.save(update_fields=["is_active"])
@@ -56,15 +63,13 @@ class GeofenceViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["get"], url_path="events")
     def events(self, request, pk=None):
-        """Recent boundary crossing events for this geofence."""
         fence = self.get_object()
         events = GeofenceEvent.objects.filter(
             assignment__geofence=fence,
         ).select_related(
             "assignment__firearm", "assignment__geofence", "location"
         ).order_by("-timestamp")[:50]
-        serializer = GeofenceEventSerializer(events, many=True)
-        return Response(serializer.data)
+        return Response(GeofenceEventSerializer(events, many=True).data)
 
 
 class GeofenceAssignmentViewSet(viewsets.ModelViewSet):
@@ -77,12 +82,10 @@ class GeofenceAssignmentViewSet(viewsets.ModelViewSet):
             geofence__organization__memberships__is_active=True,
         ).select_related("geofence", "firearm")
 
-        # Filter by geofence
         geofence_id = self.request.query_params.get("geofence")
         if geofence_id:
             qs = qs.filter(geofence_id=geofence_id)
 
-        # Filter by firearm
         firearm_id = self.request.query_params.get("firearm")
         if firearm_id:
             qs = qs.filter(firearm_id=firearm_id)
@@ -111,17 +114,14 @@ class GeofenceEventViewSet(viewsets.ReadOnlyModelViewSet):
             "location",
         ).order_by("-timestamp")
 
-        # Filter by geofence
         geofence_id = self.request.query_params.get("geofence")
         if geofence_id:
             qs = qs.filter(assignment__geofence_id=geofence_id)
 
-        # Filter by firearm
         firearm_id = self.request.query_params.get("firearm")
         if firearm_id:
             qs = qs.filter(assignment__firearm_id=firearm_id)
 
-        # Filter by direction
         direction = self.request.query_params.get("direction")
         if direction in ("enter", "exit"):
             qs = qs.filter(direction=direction)

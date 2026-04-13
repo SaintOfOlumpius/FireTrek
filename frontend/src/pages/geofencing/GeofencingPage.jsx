@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import toast from 'react-hot-toast'
 import {
-  Plus, Shield, Trash2, MapPin, ChevronRight, Link2, Activity,
+  Plus, Shield, Trash2, ChevronRight, Link2, Activity,
   X, AlertTriangle, Pencil, Layers, Clock,
   ArrowUpRight, ArrowDownLeft,
 } from 'lucide-react'
@@ -14,6 +14,9 @@ import {
 } from '../../api/geofencing.js'
 import { listFirearms } from '../../api/firearms.js'
 import { useAuthStore } from '../../store/authStore.js'
+import { forwardRef } from 'react'
+
+//  Primitives 
 
 const FieldLabel = ({ children, required }) => (
   <label className="block text-[10px] font-mono uppercase tracking-[0.2em] text-zinc-500 mb-1.5">
@@ -21,14 +24,19 @@ const FieldLabel = ({ children, required }) => (
   </label>
 )
 
-const TextInput = ({ error, ...p }) => (
-  <input
-    className={`w-full bg-zinc-900 border text-white text-sm px-3.5 py-2 rounded-md font-mono
-      placeholder:text-zinc-700 focus:outline-none transition-colors
-      ${error ? 'border-red-600/50' : 'border-zinc-800 focus:border-zinc-600'}`}
-    {...p}
-  />
-)
+const TextInput = forwardRef(({ error, ...props }, ref) => {
+  return (
+    <input
+      ref={ref}
+      className={`w-full bg-zinc-900 border text-white text-sm px-3.5 py-2 rounded-md font-mono
+        placeholder:text-zinc-700 focus:outline-none transition-colors
+        ${error ? 'border-red-600/50' : 'border-zinc-800 focus:border-zinc-600'}`}
+      {...props}
+    />
+  )
+})
+
+TextInput.displayName = 'TextInput'
 
 const Sel = ({ children, ...p }) => (
   <select
@@ -49,7 +57,8 @@ const Btn = ({ children, variant = 'primary', size = 'md', loading, disabled, cl
     <button
       disabled={disabled || loading}
       className={`inline-flex items-center font-mono uppercase tracking-widest rounded-md
-        transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed ${s[size]} ${v[variant]} ${className}`}
+        transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed
+        ${s[size]} ${v[variant]} ${className}`}
       {...p}
     >
       {loading && <span className="w-3 h-3 border border-current border-t-transparent rounded-full animate-spin" />}
@@ -68,7 +77,6 @@ const Modal = ({ open, onClose, title, children, size = 'md' }) => {
 
   if (!open) return null
   const w = { sm: 'max-w-sm', md: 'max-w-md', lg: 'max-w-lg' }
-
   return (
     <div className="fixed inset-0 flex items-center justify-center p-4" style={{ zIndex: 9999 }}>
       <div className="absolute inset-0 bg-black/75 backdrop-blur-sm" onClick={onClose} />
@@ -116,10 +124,13 @@ const DirBadge = ({ dir }) => dir === 'enter'
   ? <span className="flex items-center gap-1 text-emerald-400 text-[9px] font-mono uppercase tracking-wider"><ArrowDownLeft size={10} />Enter</span>
   : <span className="flex items-center gap-1 text-red-400 text-[9px] font-mono uppercase tracking-wider"><ArrowUpRight size={10} />Exit</span>
 
+//  Main 
+
 export default function GeofencingPage() {
   const qc = useQueryClient()
   const { activeOrg } = useAuthStore()
 
+  const drawnGeoRef = useRef(null) 
   const mapRef = useRef(null)
   const mapInst = useRef(null)
   const layersRef = useRef({})
@@ -128,7 +139,8 @@ export default function GeofencingPage() {
 
   const [tab, setTab] = useState('zones')
   const [activeFence, setActiveFence] = useState(null)
-  const [drawState, setDrawState] = useState('idle') // idle | drawing | drawn
+  // draw state: 'idle' | 'drawing' | 'drawn'
+  const [drawState, setDrawState] = useState('idle')
   const [drawnGeoJSON, setDrawnGeoJSON] = useState(null)
   const [showSaveForm, setShowSaveForm] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
@@ -138,52 +150,75 @@ export default function GeofencingPage() {
 
   const orgId = activeOrg?.id
 
+  //  Queries 
+
   const { data: fences, isLoading: fencesLoading } = useQuery({
     queryKey: ['fences', orgId],
     queryFn: () => listFences({ organization: orgId }),
     enabled: !!orgId,
+    staleTime: 1000 * 60 * 2,
   })
   const { data: assignments, isLoading: assignLoading } = useQuery({
     queryKey: ['assignments', orgId],
     queryFn: () => listAssignments({ organization: orgId }),
     enabled: !!orgId,
+    staleTime: 1000 * 60 * 2,
   })
   const { data: events, isLoading: eventsLoading } = useQuery({
     queryKey: ['geofence-events', orgId],
     queryFn: () => listEvents({ organization: orgId }),
     enabled: !!orgId && tab === 'events',
-    refetchInterval: 30_000,
+    refetchInterval: tab === 'events' ? 30000 : false,
+staleTime: 1000 * 60 * 2,
   })
   const { data: firearms } = useQuery({
     queryKey: ['firearms', orgId],
     queryFn: () => listFirearms({ organization: orgId }),
     enabled: !!orgId,
+    staleTime: 1000 * 60 * 2,
   })
 
-  const fenceList   = useMemo(() => fences?.results   ?? fences   ?? [], [fences])
-  const assignList  = useMemo(() => assignments?.results ?? assignments ?? [], [assignments])
-  const eventList   = useMemo(() => events?.results   ?? events   ?? [], [events])
-  const firearmList = useMemo(() => firearms?.results ?? [], [firearms])
+  const fenceList = useMemo(
+  () => Array.isArray(fences) ? fences : fences?.results || [],
+  [fences]
+)
+ const assignList = useMemo(
+  () => Array.isArray(assignments) ? assignments : assignments?.results || [],
+  [assignments]
+)
+  const eventList = useMemo(
+  () => Array.isArray(events) ? events : events?.results || [],
+  [events]
+)
+ const firearmList = useMemo(
+  () => Array.isArray(firearms) ? firearms : firearms?.results || [],
+  [firearms]
+)
 
   const fenceDrawKey = useMemo(
     () => fenceList.map((f) => `${f.id}:${f.updated_at ?? ''}:${f.color ?? ''}:${activeFence?.id ?? ''}`).join('|'),
     [fenceList, activeFence],
   )
 
-  const createMut = useMutation({
-    mutationFn: createFence,
-    onSuccess: (newFence) => {
-      qc.invalidateQueries({ queryKey: ['fences'] })
-      toast.success('Zone created')
-      setShowSaveForm(false)
-      setDrawnGeoJSON(null)
-      setDrawState('idle')
-      resetCreate()
-      drawLayerRef.current?.clearLayers()
-      setActiveFence(newFence)
-    },
-    onError: (e) => toast.error(e?.response?.data?.error?.message ?? 'Failed to create zone'),
-  })
+  //  Mutations 
+
+  console.log('DRAWN GEOJSON:', drawnGeoJSON)
+
+ const createMut = useMutation({
+  mutationFn: createFence,
+  onMutate: (vars) => {
+    console.log('🔥 SENDING ZONE:', vars)
+  },
+  onSuccess: () => {
+    console.log('✅ ZONE CREATED')
+    qc.invalidateQueries({ queryKey: ['fences'] })
+    toast.success('Zone created')
+  },
+  onError: (e) => {
+    console.log('❌ CREATE FAILED:', e?.response?.data)
+    toast.error('Failed to create zone')
+  },
+})
 
   const updateMut = useMutation({
     mutationFn: ({ id, data }) => updateFence(id, data),
@@ -226,14 +261,18 @@ export default function GeofencingPage() {
     },
   })
 
+  //  Forms 
+
   const { register: regCreate, handleSubmit: hsCreate, reset: resetCreate, formState: { errors: errCreate } } =
     useForm({ defaultValues: { color: '#ef4444' } })
   const { register: regEdit, handleSubmit: hsEdit, reset: resetEdit } = useForm()
   const { register: regAssign, handleSubmit: hsAssign, reset: resetAssign } =
     useForm({ defaultValues: { rule: 'stay_inside' } })
 
-  // Map init
+  //  Map init 
+
   useEffect(() => {
+    
     if (mapInst.current || !mapRef.current) return
     const container = mapRef.current
     if (container._leaflet_id) return
@@ -247,35 +286,41 @@ export default function GeofencingPage() {
 
         const style = document.createElement('style')
         style.textContent = `
-          .leaflet-container{background:#09090b}
-          .leaflet-popup-content-wrapper{background:#18181b!important;border:1px solid #27272a!important;border-radius:10px!important;box-shadow:0 24px 48px rgba(0,0,0,.8)!important;padding:0!important}
-          .leaflet-popup-tip{background:#18181b!important}
-          .leaflet-popup-content{margin:0!important}
-          .leaflet-control-zoom a{background:#18181b!important;border-color:#27272a!important;color:#71717a!important}
-          .leaflet-control-zoom a:hover{background:#27272a!important;color:#fff!important}
-          .leaflet-control-attribution{background:#09090b99!important;color:#3f3f46!important;font-size:9px!important}
-          .leaflet-draw-guide-dash{background:#ef4444!important}
-          .leaflet-draw-tooltip{background:#18181b!important;border:1px solid #27272a!important;color:#a1a1aa!important;border-radius:6px!important;font-family:monospace!important;font-size:11px!important;padding:4px 8px!important}
-          .leaflet-mouse-marker{cursor:crosshair!important}
+          .leaflet-container { background: #09090b; }
+          .leaflet-popup-content-wrapper { background: #18181b !important; border: 1px solid #27272a !important; border-radius: 10px !important; box-shadow: 0 24px 48px rgba(0,0,0,.8) !important; padding: 0 !important; }
+          .leaflet-popup-tip { background: #18181b !important; }
+          .leaflet-popup-content { margin: 0 !important; }
+          .leaflet-control-zoom a { background: #18181b !important; border-color: #27272a !important; color: #71717a !important; }
+          .leaflet-control-zoom a:hover { background: #27272a !important; color: #fff !important; }
+          .leaflet-control-attribution { background: #09090b99 !important; color: #3f3f46 !important; font-size: 9px !important; }
+          .leaflet-draw-guide-dash { background: #ef4444 !important; }
+          .leaflet-draw-tooltip { background: #18181b !important; border: 1px solid #27272a !important; color: #a1a1aa !important; border-radius: 6px !important; font-family: monospace !important; font-size: 11px !important; padding: 4px 8px !important; }
+          .leaflet-mouse-marker { cursor: crosshair !important; }
         `
         document.head.appendChild(style)
 
         const map = L.map(container, { zoomControl: false }).setView([-25.7, 28.2], 10)
         L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-          attribution: '© OpenStreetMap © CARTO', maxZoom: 19,
+          attribution: '© OpenStreetMap © CARTO',
+          maxZoom: 19,
         }).addTo(map)
         L.control.zoom({ position: 'bottomright' }).addTo(map)
 
         const drawnItems = new L.FeatureGroup().addTo(map)
         drawLayerRef.current = drawnItems
 
-        map.on(L.Draw.Event.CREATED, (e) => {
-          drawnItems.clearLayers()
-          drawnItems.addLayer(e.layer)
-          setDrawnGeoJSON(e.layer.toGeoJSON().geometry)
-          setDrawState('drawn')
-          setShowSaveForm(true)
-        })
+     map.on(L.Draw.Event.CREATED, (e) => {
+  drawnItems.clearLayers()
+  drawnItems.addLayer(e.layer)
+
+const geojson = e.layer.toGeoJSON().geometry
+
+  console.log('RAW GEOJSON:', geojson)
+
+  setDrawnGeoJSON(geojson)   // ✅ use state
+  setDrawState('drawn')
+  setShowSaveForm(true)
+})
 
         mapInst.current = map
       })
@@ -286,42 +331,54 @@ export default function GeofencingPage() {
     }
   }, [])
 
-  const startDraw = useCallback(() => {
-    if (!mapInst.current || !window.L) return
-    const L = window.L
-    drawLayerRef.current?.clearLayers()
-    setDrawnGeoJSON(null)
-    setDrawState('drawing')
-    setShowSaveForm(false)
-    setActiveFence(null)
+//  Draw helpers 
 
-    const handler = new L.Draw.Polygon(mapInst.current, {
-      shapeOptions: { color: '#ef4444', weight: 2, fillOpacity: 0.12 },
-      allowIntersection: false,
-      showArea: true,
-      metric: true,
-    })
-    handler.enable()
-    drawHandlerRef.current = handler
-  }, [])
+const startDraw = useCallback(() => {
+  if (!mapInst.current || !window.L) return
 
-  const cancelDraw = useCallback(() => {
-    drawHandlerRef.current?.disable()
-    drawHandlerRef.current = null
-    drawLayerRef.current?.clearLayers()
-    setDrawState('idle')
-    setDrawnGeoJSON(null)
-    setShowSaveForm(false)
-    resetCreate()
-  }, [resetCreate])
+  const L = window.L
 
-  // Render fence polygons
+  drawLayerRef.current?.clearLayers()
+  setDrawnGeoJSON(null)
+  setDrawState('drawing')
+  setShowSaveForm(false)
+  setActiveFence(null)
+
+  const handler = new L.Draw.Polygon(mapInst.current, {
+    shapeOptions: {
+      color: '#ef4444',
+      weight: 2,
+      fillOpacity: 0.12,
+    },
+    allowIntersection: false,
+    showArea: true,
+    metric: true,
+  })
+
+  handler.enable()
+  drawHandlerRef.current = handler
+}, [])
+
+const cancelDraw = useCallback(() => {
+  drawHandlerRef.current?.disable()
+  drawHandlerRef.current = null
+  drawLayerRef.current?.clearLayers()
+  setDrawState('idle')
+  setDrawnGeoJSON(null)
+  setShowSaveForm(false)
+  resetCreate()
+}, [resetCreate])
+  //  Render fence polygons 
+
   useEffect(() => {
     if (!mapInst.current || fenceList.length === 0) return
     let cancelled = false
+
     import('leaflet').then(({ default: L }) => {
       if (cancelled) return
       const map = mapInst.current
+
+      // Remove old layers
       Object.values(layersRef.current).forEach((l) => { try { map.removeLayer(l) } catch { } })
       layersRef.current = {}
 
@@ -332,6 +389,7 @@ export default function GeofencingPage() {
           const geojson = typeof raw === 'string' ? JSON.parse(raw) : raw
           const isSelected = activeFence?.id === fence.id
           const color = fence.color || '#ef4444'
+
           const layer = L.geoJSON(geojson, {
             style: {
               color,
@@ -357,10 +415,12 @@ export default function GeofencingPage() {
           layer.on('click', () => {
             if (drawState === 'idle') setActiveFence(fence)
           })
+
           layersRef.current[fence.id] = layer
         } catch { }
       })
     })
+
     return () => { cancelled = true }
   }, [fenceDrawKey, fenceList, activeFence, drawState])
 
@@ -372,9 +432,16 @@ export default function GeofencingPage() {
     }
   }, [activeFence])
 
+  //  Submit handlers 
+
   const onCreateSubmit = (data) => {
     if (!drawnGeoJSON) { toast.error('Draw a polygon first'); return }
-    createMut.mutate({ ...data, organization: orgId, area_geojson: drawnGeoJSON })
+    createMut.mutate({
+      name: data.name,
+      description: data.description || '',
+      color: data.color,
+    area_geojson: drawnGeoJSON,
+    })
   }
 
   const onEditSubmit = (data) => {
@@ -384,7 +451,7 @@ export default function GeofencingPage() {
 
   const openEdit = (fence) => {
     setActiveFence(fence)
-    resetEdit({ name: fence.name, description: fence.description, color: fence.color, is_active: fence.is_active })
+    resetEdit({ name: fence.name, description: fence.description ?? '', color: fence.color, is_active: fence.is_active })
     setShowEdit(true)
   }
 
@@ -392,6 +459,8 @@ export default function GeofencingPage() {
     () => activeFence ? assignList.filter((a) => String(a.geofence) === String(activeFence.id)) : [],
     [activeFence, assignList],
   )
+
+  //  Render 
 
   return (
     <div className="flex flex-col h-full bg-black" style={{ minHeight: 0 }}>
@@ -436,6 +505,7 @@ export default function GeofencingPage() {
         {/* Sidebar */}
         <div className="w-72 shrink-0 flex flex-col border-r border-zinc-900 bg-zinc-950 overflow-hidden">
 
+          {/* ZONES */}
           {tab === 'zones' && (
             <>
               <div className="shrink-0 px-4 py-3 border-b border-zinc-800/40 flex items-center justify-between">
@@ -465,29 +535,47 @@ export default function GeofencingPage() {
                           key={fence.id}
                           onClick={() => drawState === 'idle' && setActiveFence(isSelected ? null : fence)}
                           className={`rounded-lg border px-3 py-2.5 transition-all duration-150 group ${
-                            drawState !== 'idle' ? 'cursor-default opacity-50' :
-                            isSelected ? 'bg-red-950/20 border-red-800/30 cursor-pointer' : 'bg-zinc-900/30 border-zinc-800/30 hover:border-zinc-700/50 hover:bg-zinc-900/60 cursor-pointer'
+                            drawState !== 'idle'
+                              ? 'cursor-default opacity-40 border-zinc-800/20 bg-zinc-900/20'
+                              : isSelected
+                              ? 'bg-red-950/20 border-red-800/30 cursor-pointer'
+                              : 'bg-zinc-900/30 border-zinc-800/30 hover:border-zinc-700/50 hover:bg-zinc-900/60 cursor-pointer'
                           }`}
                         >
                           <div className="flex items-center justify-between gap-2">
                             <div className="flex items-center gap-2.5 min-w-0">
-                              <div className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: fence.color ?? '#ef4444', opacity: fence.is_active ? 1 : 0.4 }} />
-                              <span className={`text-xs font-mono truncate ${fence.is_active ? 'text-zinc-200' : 'text-zinc-500'}`}>{fence.name}</span>
+                              <div
+                                className="w-2.5 h-2.5 rounded-sm shrink-0"
+                                style={{ background: fence.color ?? '#ef4444', opacity: fence.is_active ? 1 : 0.4 }}
+                              />
+                              <span className={`text-xs font-mono truncate ${fence.is_active ? 'text-zinc-200' : 'text-zinc-500'}`}>
+                                {fence.name}
+                              </span>
                               {!fence.is_active && <span className="text-[8px] font-mono text-zinc-700 uppercase shrink-0">off</span>}
                             </div>
                             {drawState === 'idle' && (
                               <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                                <button onClick={(e) => { e.stopPropagation(); openEdit(fence) }} className="p-1 rounded text-zinc-700 hover:text-zinc-300 transition-colors">
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); openEdit(fence) }}
+                                  className="p-1 rounded text-zinc-700 hover:text-zinc-300 transition-colors"
+                                >
                                   <Pencil size={10} />
                                 </button>
-                                <button onClick={(e) => { e.stopPropagation(); setDeleteTarget(fence) }} className="p-1 rounded text-zinc-700 hover:text-red-400 transition-colors">
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); setDeleteTarget(fence) }}
+                                  className="p-1 rounded text-zinc-700 hover:text-red-400 transition-colors"
+                                >
                                   <Trash2 size={10} />
                                 </button>
                               </div>
                             )}
                           </div>
-                          {fence.description && <p className="text-[10px] text-zinc-600 font-mono mt-1 truncate pl-5">{fence.description}</p>}
-                          <p className="text-[9px] text-zinc-700 font-mono mt-1 pl-5">{fence.assignment_count ?? 0} rule{(fence.assignment_count ?? 0) !== 1 ? 's' : ''}</p>
+                          {fence.description && (
+                            <p className="text-[10px] text-zinc-600 font-mono mt-1 truncate pl-5">{fence.description}</p>
+                          )}
+                          <p className="text-[9px] text-zinc-700 font-mono mt-1 pl-5">
+                            {fence.assignment_count ?? 0} rule{(fence.assignment_count ?? 0) !== 1 ? 's' : ''}
+                          </p>
                         </div>
                       )
                     })
@@ -496,6 +584,7 @@ export default function GeofencingPage() {
             </>
           )}
 
+          {/* ASSIGNMENTS */}
           {tab === 'assignments' && (
             <>
               <div className="shrink-0 px-4 py-3 border-b border-zinc-800/40 flex items-center justify-between">
@@ -503,7 +592,9 @@ export default function GeofencingPage() {
                   <Link2 size={11} className="text-zinc-600" />
                   <span className="text-[9px] font-mono uppercase tracking-[0.3em] text-zinc-500">Rules</span>
                 </div>
-                <Btn size="sm" onClick={() => { resetAssign(); setShowAssign(true) }}><Plus size={10} /> Add</Btn>
+                <Btn size="sm" onClick={() => { resetAssign(); setShowAssign(true) }}>
+                  <Plus size={10} /> Add
+                </Btn>
               </div>
               <div className="flex-1 overflow-y-auto p-2 space-y-1 min-h-0">
                 {assignLoading
@@ -519,13 +610,24 @@ export default function GeofencingPage() {
                     <div key={a.id} className="rounded-lg border border-zinc-800/30 bg-zinc-900/30 px-3 py-2.5 group hover:border-zinc-700/50 transition-colors">
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0 flex-1">
-                          <p className="text-[11px] text-zinc-300 font-mono truncate">{a.firearm_display ?? a.firearm_serial ?? a.firearm}</p>
-                          <p className="text-[9px] text-zinc-600 font-mono mt-0.5 truncate">{a.geofence_name ?? a.geofence}</p>
+                          <p className="text-[11px] text-zinc-300 font-mono truncate">
+                            {a.firearm_display ?? a.firearm_serial ?? a.firearm}
+                          </p>
+                          <p className="text-[9px] text-zinc-600 font-mono mt-0.5 truncate">
+                            {a.geofence_name ?? a.geofence}
+                          </p>
                           <span className={`inline-block mt-1 text-[8px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded ${
-                            a.rule === 'stay_inside' ? 'bg-blue-950/40 text-blue-400 border border-blue-900/30' : 'bg-orange-950/40 text-orange-400 border border-orange-900/30'
-                          }`}>{a.rule?.replace('_', ' ')}</span>
+                            a.rule === 'stay_inside'
+                              ? 'bg-blue-950/40 text-blue-400 border border-blue-900/30'
+                              : 'bg-orange-950/40 text-orange-400 border border-orange-900/30'
+                          }`}>
+                            {a.rule?.replace('_', ' ')}
+                          </span>
                         </div>
-                        <button onClick={() => setDeleteAssignTarget(a)} className="p-1 rounded text-zinc-700 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100 shrink-0 mt-0.5">
+                        <button
+                          onClick={() => setDeleteAssignTarget(a)}
+                          className="p-1 rounded text-zinc-700 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100 shrink-0 mt-0.5"
+                        >
                           <Trash2 size={10} />
                         </button>
                       </div>
@@ -536,6 +638,7 @@ export default function GeofencingPage() {
             </>
           )}
 
+          {/* EVENTS */}
           {tab === 'events' && (
             <>
               <div className="shrink-0 px-4 py-3 border-b border-zinc-800/40 flex items-center justify-between">
@@ -558,7 +661,9 @@ export default function GeofencingPage() {
                   : eventList.map((ev) => (
                     <div key={ev.id} className="rounded-lg border border-zinc-800/30 bg-zinc-900/30 px-3 py-2.5">
                       <div className="flex items-start justify-between gap-2 mb-0.5">
-                        <p className="text-[10px] text-zinc-300 font-mono truncate flex-1">{ev.firearm_display ?? ev.firearm_serial}</p>
+                        <p className="text-[10px] text-zinc-300 font-mono truncate flex-1">
+                          {ev.firearm_display ?? ev.firearm_serial}
+                        </p>
                         <DirBadge dir={ev.direction} />
                       </div>
                       <p className="text-[9px] text-zinc-600 font-mono truncate">{ev.geofence_name}</p>
@@ -578,6 +683,7 @@ export default function GeofencingPage() {
         <div className="flex-1 relative overflow-hidden">
           <div ref={mapRef} className="absolute inset-0" />
 
+          {/* No org overlay */}
           {!activeOrg && (
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/90 backdrop-blur-sm gap-4 z-10">
               <div className="w-12 h-12 bg-red-950/40 border border-red-900/30 rounded-xl flex items-center justify-center">
@@ -590,18 +696,18 @@ export default function GeofencingPage() {
             </div>
           )}
 
-          {/* Drawing banner — pointer-events-none so it doesn't block map */}
+          {/* Drawing instruction — pointer-events-none so it never blocks map clicks */}
           {drawState === 'drawing' && (
-            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-3
-              bg-zinc-950/95 border border-red-800/40 rounded-lg px-4 py-2.5 shadow-xl pointer-events-none">
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 pointer-events-none
+              flex items-center gap-3 bg-zinc-950/95 border border-red-800/40 rounded-lg px-4 py-2.5 shadow-xl">
               <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
               <span className="text-red-400 text-xs font-mono uppercase tracking-wider">
-                Click to place points · Double-click to finish
+                Click to place points · Double-click to finish polygon
               </span>
             </div>
           )}
 
-          {/* Floating save form — appears after polygon drawn, no backdrop */}
+          {/* Floating save form — no backdrop, sits above map */}
           {showSaveForm && drawState === 'drawn' && (
             <div
               className="absolute bottom-6 left-1/2 -translate-x-1/2 w-full max-w-sm
@@ -630,7 +736,11 @@ export default function GeofencingPage() {
                   </div>
                   <div>
                     <FieldLabel>Color</FieldLabel>
-                    <input type="color" className="w-full h-9 bg-zinc-900 border border-zinc-800 rounded-md px-2 py-1 cursor-pointer focus:outline-none" {...regCreate('color')} />
+                    <input
+                      type="color"
+                      className="w-full h-9 bg-zinc-900 border border-zinc-800 rounded-md px-2 py-1 cursor-pointer focus:outline-none"
+                      {...regCreate('color')}
+                    />
                   </div>
                 </div>
                 <div>
@@ -638,14 +748,18 @@ export default function GeofencingPage() {
                   <TextInput placeholder="Optional..." {...regCreate('description')} />
                 </div>
                 <div className="flex gap-2 pt-1">
-                  <Btn variant="ghost" type="button" size="sm" onClick={cancelDraw} className="flex-1 justify-center">Discard</Btn>
-                  <Btn type="submit" size="sm" loading={createMut.isPending} className="flex-1 justify-center">Save Zone</Btn>
+                  <Btn variant="ghost" type="button" size="sm" onClick={cancelDraw} className="flex-1 justify-center">
+                    Discard
+                  </Btn>
+                  <Btn type="submit" size="sm" loading={createMut.isPending} className="flex-1 justify-center">
+                    Save Zone
+                  </Btn>
                 </div>
               </form>
             </div>
           )}
 
-          {/* Active fence panel */}
+          {/* Active fence info panel */}
           {activeFence && drawState === 'idle' && (
             <div className="absolute top-4 right-4 w-56 bg-zinc-950/95 backdrop-blur-md border border-zinc-800 rounded-xl overflow-hidden shadow-2xl z-10">
               <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800/60">
@@ -653,14 +767,20 @@ export default function GeofencingPage() {
                   <div className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: activeFence.color ?? '#ef4444' }} />
                   <span className="text-white text-xs font-mono font-bold truncate">{activeFence.name}</span>
                 </div>
-                <button onClick={() => setActiveFence(null)} className="text-zinc-600 hover:text-zinc-300 transition-colors ml-2 shrink-0"><X size={12} /></button>
+                <button onClick={() => setActiveFence(null)} className="text-zinc-600 hover:text-zinc-300 transition-colors ml-2 shrink-0">
+                  <X size={12} />
+                </button>
               </div>
               <div className="p-3 space-y-2.5">
-                {activeFence.description && <p className="text-zinc-500 text-[10px] font-mono leading-relaxed">{activeFence.description}</p>}
+                {activeFence.description && (
+                  <p className="text-zinc-500 text-[10px] font-mono leading-relaxed">{activeFence.description}</p>
+                )}
                 <div className="space-y-1.5 text-[9px] font-mono">
                   <div className="flex justify-between">
                     <span className="text-zinc-600 uppercase tracking-wider">Status</span>
-                    <span className={activeFence.is_active ? 'text-emerald-400' : 'text-zinc-600'}>{activeFence.is_active ? 'Active' : 'Inactive'}</span>
+                    <span className={activeFence.is_active ? 'text-emerald-400' : 'text-zinc-600'}>
+                      {activeFence.is_active ? 'Active' : 'Inactive'}
+                    </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-zinc-600 uppercase tracking-wider">Rules</span>
@@ -671,22 +791,36 @@ export default function GeofencingPage() {
                   <div className="space-y-1 border-t border-zinc-800/60 pt-2">
                     {activeFenceAssigns.slice(0, 3).map((a) => (
                       <div key={a.id} className="flex items-center justify-between bg-zinc-900/60 rounded px-2 py-1.5">
-                        <span className="text-zinc-400 text-[9px] font-mono truncate flex-1">{a.firearm_serial ?? a.firearm}</span>
-                        <span className={`text-[8px] font-mono uppercase ml-2 shrink-0 ${a.rule === 'stay_inside' ? 'text-blue-400' : 'text-orange-400'}`}>{a.rule?.replace('_', ' ')}</span>
+                        <span className="text-zinc-400 text-[9px] font-mono truncate flex-1">
+                          {a.firearm_serial ?? a.firearm}
+                        </span>
+                        <span className={`text-[8px] font-mono uppercase ml-2 shrink-0 ${
+                          a.rule === 'stay_inside' ? 'text-blue-400' : 'text-orange-400'
+                        }`}>
+                          {a.rule?.replace('_', ' ')}
+                        </span>
                       </div>
                     ))}
-                    {activeFenceAssigns.length > 3 && <p className="text-[9px] text-zinc-700 font-mono text-center">+{activeFenceAssigns.length - 3} more</p>}
+                    {activeFenceAssigns.length > 3 && (
+                      <p className="text-[9px] text-zinc-700 font-mono text-center">
+                        +{activeFenceAssigns.length - 3} more
+                      </p>
+                    )}
                   </div>
                 )}
                 <div className="flex gap-1.5 pt-1 border-t border-zinc-800/60">
-                  <Btn variant="ghost" size="sm" className="flex-1 justify-center" onClick={() => openEdit(activeFence)}><Pencil size={10} /> Edit</Btn>
-                  <Btn variant="danger" size="sm" onClick={() => setDeleteTarget(activeFence)}><Trash2 size={10} /></Btn>
+                  <Btn variant="ghost" size="sm" className="flex-1 justify-center" onClick={() => openEdit(activeFence)}>
+                    <Pencil size={10} /> Edit
+                  </Btn>
+                  <Btn variant="danger" size="sm" onClick={() => setDeleteTarget(activeFence)}>
+                    <Trash2 size={10} />
+                  </Btn>
                 </div>
               </div>
             </div>
           )}
 
-          {/* Legend */}
+          {/* Map legend */}
           <div className="absolute bottom-4 left-4 bg-zinc-950/90 backdrop-blur-sm border border-zinc-800/60 rounded-lg px-3 py-2 flex items-center gap-3 z-10">
             <div className="w-3 h-px bg-red-600" />
             <span className="text-zinc-600 text-[9px] font-mono uppercase tracking-wider">
@@ -706,7 +840,11 @@ export default function GeofencingPage() {
             </div>
             <div>
               <FieldLabel>Color</FieldLabel>
-              <input type="color" className="w-full h-9 bg-zinc-900 border border-zinc-800 rounded-md px-2 py-1 cursor-pointer focus:outline-none" {...regEdit('color')} />
+              <input
+                type="color"
+                className="w-full h-9 bg-zinc-900 border border-zinc-800 rounded-md px-2 py-1 cursor-pointer focus:outline-none"
+                {...regEdit('color')}
+              />
             </div>
           </div>
           <div>
@@ -733,7 +871,16 @@ export default function GeofencingPage() {
 
       {/* Assign Rule Modal */}
       <Modal open={showAssign} onClose={() => setShowAssign(false)} title="Create Boundary Rule" size="sm">
-        <form onSubmit={hsAssign((d) => assignMut.mutate({ ...d, organization: orgId }))} className="space-y-4">
+       <form
+  onSubmit={hsAssign((d) => {
+    if (!orgId) {
+      toast.error('No organization selected')
+      return
+    }
+    assignMut.mutate({ ...d, organization: orgId })
+  })}
+  className="space-y-4"
+>
           <div>
             <FieldLabel required>Geofence Zone</FieldLabel>
             <Sel {...regAssign('geofence', { required: true })}>
@@ -756,11 +903,15 @@ export default function GeofencingPage() {
               <option value="stay_inside">Must Stay Inside zone</option>
               <option value="stay_outside">Must Stay Outside zone</option>
             </Sel>
-            <p className="text-zinc-700 text-[9px] font-mono mt-1.5 leading-relaxed">An alert fires when the firearm crosses this boundary against the rule.</p>
+            <p className="text-zinc-700 text-[9px] font-mono mt-1.5 leading-relaxed">
+              An alert fires when the firearm crosses this boundary against the rule.
+            </p>
           </div>
           <div className="flex gap-2 justify-end pt-2 border-t border-zinc-800/60">
             <Btn variant="ghost" type="button" onClick={() => setShowAssign(false)}>Cancel</Btn>
-            <Btn type="submit" loading={assignMut.isPending}>Create Rule <ChevronRight size={11} /></Btn>
+            <Btn type="submit" loading={assignMut.isPending}>
+              Create Rule <ChevronRight size={11} />
+            </Btn>
           </div>
         </form>
       </Modal>
@@ -768,7 +919,7 @@ export default function GeofencingPage() {
       <Confirm
         open={!!deleteTarget}
         onClose={() => setDeleteTarget(null)}
-        onConfirm={() => deleteMut.mutate(deleteTarget.id)}
+       onConfirm={() => deleteTarget && deleteMut.mutate(deleteTarget.id)}
         title="Delete Zone"
         message={`Delete "${deleteTarget?.name}"? All linked rules and events will be permanently removed.`}
         loading={deleteMut.isPending}
@@ -777,7 +928,7 @@ export default function GeofencingPage() {
       <Confirm
         open={!!deleteAssignTarget}
         onClose={() => setDeleteAssignTarget(null)}
-        onConfirm={() => deleteAssignMut.mutate(deleteAssignTarget.id)}
+       onConfirm={() => deleteAssignTarget && deleteAssignMut.mutate(deleteAssignTarget.id)}
         title="Remove Rule"
         message="Remove this boundary rule? Violation alerts for this firearm/zone pair will stop."
         loading={deleteAssignMut.isPending}

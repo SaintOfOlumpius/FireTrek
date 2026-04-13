@@ -10,6 +10,7 @@ import ConfirmDialog from '../../components/ui/ConfirmDialog.jsx'
 import Spinner from '../../components/ui/Spinner.jsx'
 import { listFirearms, createFirearm, deleteFirearm, listCategories } from '../../api/firearms.js'
 import { useAuthStore } from '../../store/authStore.js'
+import { useMemo } from 'react' 
 
 //  Status config 
 const STATUS_STYLE = {
@@ -86,7 +87,7 @@ function StyledSelect({ children, ...props }) {
 function LicenseDate({ dateStr }) {
   if (!dateStr) return <span className="text-zinc-700 font-mono text-xs">—</span>
   const date = new Date(dateStr)
-  const daysLeft = Math.ceil((date - Date.now()) / 86_400_000)
+  const daysLeft = Math.ceil(date.getTime() - Date.now()) / 86400000
   const color = daysLeft < 0 ? 'text-red-400' : daysLeft < 30 ? 'text-orange-400' : 'text-zinc-500'
   return <span className={`font-mono text-xs ${color}`}>{format(date, 'dd MMM yyyy')}</span>
 }
@@ -100,15 +101,19 @@ export default function FirearmsPage() {
   const [showCreate, setShowCreate] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState(null)
 
-  const params = {}
-  if (search) params.search = search
-  if (statusFilter) params.status = statusFilter
-  if (activeOrg) params.organization = activeOrg.id
+const params = useMemo(() => {
+  const p = {}
+  if (search) p.search = search
+  if (statusFilter) p.status = statusFilter
+  if (activeOrg) p.organization = activeOrg.id
+  return p
+}, [search, statusFilter, activeOrg])
 
-  const { data, isLoading } = useQuery({
-    queryKey: ['firearms', params],
-    queryFn: () => listFirearms(params),
-  })
+ const { data, isLoading } = useQuery({
+  queryKey: ['firearms', params],
+  queryFn: () => listFirearms(params),
+  staleTime: 1000 * 60 * 2,
+})
   const { data: categories } = useQuery({
     queryKey: ['firearms-categories'],
     queryFn: listCategories,
@@ -116,12 +121,12 @@ export default function FirearmsPage() {
 
   const createMut = useMutation({
     mutationFn: createFirearm,
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['firearms'] })
-      toast.success('Firearm registered')
-      setShowCreate(false)
-      reset()
-    },
+   onSuccess: () => {
+  qc.invalidateQueries({ queryKey: ['firearms'] })
+  toast.success('Firearm registered')
+  reset()
+  setShowCreate(false)
+},
     onError: (e) => toast.error(e?.response?.data?.detail ?? 'Failed to create'),
   })
 
@@ -135,20 +140,23 @@ export default function FirearmsPage() {
   })
 
   const { register, handleSubmit, reset } = useForm()
-  const onCreateSubmit = (formData) => {
-    if (activeOrg) formData.organization = activeOrg.id
-    createMut.mutate(formData)
-  }
+const onCreateSubmit = (formData) => {
+  if (!formData.status) formData.status = 'active'
+  if (activeOrg) formData.organization = activeOrg.id
+  createMut.mutate(formData)
+}
 
   const firearms = data?.results ?? []
-  const categoryList = categories?.results ?? categories ?? []
+ const categoryList = Array.isArray(categories)
+  ? categories
+  : categories?.results || []
 
   // Summary counts for stat strip
   const activeCount        = firearms.filter((f) => f.status === 'active').length
   const criticalCount      = firearms.filter((f) => ['lost', 'stolen'].includes(f.status)).length
   const expiringCount      = firearms.filter((f) => {
     if (!f.license_expiry) return false
-    return Math.ceil((new Date(f.license_expiry) - Date.now()) / 86_400_000) < 30
+    return Math.ceil((new Date(f.license_expiry) - Date.now()) / 86400000) < 30
   }).length
 
   return (
@@ -461,7 +469,7 @@ export default function FirearmsPage() {
       <ConfirmDialog
         open={!!deleteTarget}
         onClose={() => setDeleteTarget(null)}
-        onConfirm={() => deleteMut.mutate(deleteTarget.id)}
+       onConfirm={() => deleteTarget && deleteMut.mutate(deleteTarget.id)}
         title="Delete Firearm"
         message={`Delete ${deleteTarget?.serial_number}? This cannot be undone.`}
         danger

@@ -1,4 +1,20 @@
-﻿from django.db import models
+"""
+Geofence models.
+
+Geofences are polygon areas stored as PostGIS MultiPolygon geometries.
+Using MultiPolygon (rather than Polygon) lets a single "zone" have
+disjoint areas (e.g., multiple permitted storage locations for a single rule).
+
+GeofenceAssignment links a Geofence to a Firearm, meaning "this firearm
+must/must not leave this zone". The `rule` field expresses whether the
+firearm should stay INSIDE or OUTSIDE the zone.
+
+GeofenceEvent records each time a firearm crosses a fence boundary, providing
+a persistent audit trail of all boundary crossings.
+"""
+
+from django.db import models
+
 from apps.organizations.models import Organization
 from core.models import TimestampedModel
 
@@ -16,10 +32,12 @@ class Geofence(TimestampedModel):
     )
     name = models.CharField(max_length=200)
     description = models.TextField(blank=True)
+
     if GIS_AVAILABLE:
         area = gis_models.MultiPolygonField(geography=True, srid=4326)
     else:
-        area = models.TextField(null=True, blank=True)
+        area = models.TextField(null=True, blank=True)  # placeholder
+
     is_active = models.BooleanField(default=True)
     color = models.CharField(max_length=7, default="#FF5733")
     created_by = models.ForeignKey(
@@ -41,6 +59,7 @@ class GeofenceAssignment(TimestampedModel):
         ("stay_inside", "Must Stay Inside"),
         ("stay_outside", "Must Stay Outside"),
     ]
+
     geofence = models.ForeignKey(Geofence, on_delete=models.CASCADE, related_name="assignments")
     firearm = models.ForeignKey(
         "firearms.Firearm", on_delete=models.CASCADE, related_name="geofence_assignments"
@@ -64,6 +83,7 @@ class GeofenceEvent(TimestampedModel):
         ("enter", "Entered"),
         ("exit", "Exited"),
     ]
+
     assignment = models.ForeignKey(
         GeofenceAssignment, on_delete=models.CASCADE, related_name="events"
     )
